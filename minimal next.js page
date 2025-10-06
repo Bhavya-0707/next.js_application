@@ -1,0 +1,26 @@
+import React from 'react';
+
+// Using inline styling/Tailwind classes for a minimal presentation
+export default function Home() {
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-4">
+      <main className="text-center p-8 bg-white shadow-xl rounded-2xl border border-indigo-200 transition duration-500 hover:shadow-2xl">
+        <h1 className="text-5xl font-extrabold text-indigo-700 mb-4">
+          Next.js App Deployed!
+        </h1>
+        <p className="text-xl text-gray-600 mb-6">
+          This container was built by **GitHub Actions**, pushed to **GHCR**, and successfully deployed to **Minikube**.
+        </p>
+        <div className="flex justify-center items-center space-x-4 p-3 bg-indigo-50 rounded-lg">
+          <span className="text-3xl text-green-600">✅</span>
+          <p className="text-lg font-medium text-gray-700">
+            K8s Deployment Verified: Running on container port 3000.
+          </p>
+        </div>
+      </main>
+      <footer className="mt-8 text-sm text-gray-500">
+        Optimized with Next.js Standalone mode and a Multi-stage Docker build.
+      </footer>
+    </div>
+  );
+}
