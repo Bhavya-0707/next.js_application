@@ -1,0 +1,50 @@
+# --- Stage 1: Build Environment (Installer/Builder) ---
+FROM node:20-alpine AS builder
+
+# Install necessary system dependencies (like glibc for certain libraries)
+RUN apk add --no-cache libc6-compat
+
+# Set working directory inside the container
+WORKDIR /app
+
+# Copy package files to leverage Docker layer caching
+COPY package.json yarn.lock ./
+
+# Install dependencies (including devDependencies needed for build)
+RUN yarn install --frozen-lockfile
+
+# Copy the rest of the application code
+COPY . .
+
+# Build the Next.js application (outputting to .next/standalone due to next.config.js)
+RUN yarn run build
+
+# --- Stage 2: Production Runner ---
+# Use a minimal, non-root base image for production security and size
+FROM node:20-alpine AS runner
+
+# Create a non-root user and group for security
+RUN addgroup --system --gid 1001 nextjs
+RUN adduser --system --uid 1001 nextjs
+
+# Set production environment variables
+ENV NODE_ENV production
+# Next.js defaults to port 3000, which we will use
+EXPOSE 3000
+
+# Set working directory 
+WORKDIR /app
+
+# Copy necessary files from the builder stage with correct non-root user ownership
+# 1. The standalone server (including minimal node_modules and server.js)
+COPY --from=builder --chown=nextjs:nextjs /app/.next/standalone ./
+# 2. The static assets (client-side JS/CSS)
+COPY --from=builder --chown=nextjs:nextjs /app/.next/static ./.next/static
+# 3. The public directory (for static assets like images, fonts)
+COPY --from=builder --chown=nextjs:nextjs /app/public ./public
+
+# Switch to the non-root user
+USER nextjs
+
+# Start the Next.js server
+CMD ["node", "server.js"]
