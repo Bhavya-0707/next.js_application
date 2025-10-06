@@ -1,0 +1,113 @@
+name: Containerize, Push & Deploy to Minikube
+
+on:
+  push:
+    branches:
+      - main
+  # Allows manual triggering of the workflow from the GitHub UI
+  workflow_dispatch:
+
+env:
+  # The name of the Docker image in GHCR
+  IMAGE_NAME: nextjs-minikube-app
+  # The GitHub Container Registry URL
+  REGISTRY: ghcr.io
+  # Image path uses the repository owner/name
+  IMAGE_REPO_PATH: ${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
+  K8S_DEPLOYMENT_FILE: k8s/deployment.yaml
+
+jobs:
+  build-push-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # Necessary to push images to GHCR
+      id-token: write # Required for secure OIDC authentication
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    # 1. Configure Docker Buildx for modern building capabilities
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    # 2. Log in to GitHub Container Registry (GHCR) using the GITHUB_TOKEN
+    - name: Log in to GHCR
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    # 3. Calculate Image Tag (using short SHA and 'latest')
+    - name: Determine Image Tag
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_REPO_PATH }}
+        tags: |
+          type=sha,format=short
+          latest
+
+    # 4. Build and Push the Docker image to GHCR
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        # Use GitHub Actions cache for faster subsequent builds
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    # 5. Start Minikube cluster (sets up kubectl and the Kubernetes context)
+    - name: Start Minikube
+      uses: medyagh/setup-minikube@latest
+      id: minikube
+      
+    # 6. Load the image into the Minikube cluster's daemon
+    # We must explicitly load the image since it was built on the runner, not minikube's daemon
+    - name: Load GHCR Image into Minikube
+      run: |
+        # Use the tag we just pushed
+        IMAGE_TAG=$(echo "${{ steps.meta.outputs.tags }}" | grep -o 'ghcr.io.*latest')
+        minikube image load $IMAGE_TAG
+        echo "Image loaded: $IMAGE_TAG"
+
+    # 7. Update K8s Manifests with the specific image tag
+    # This step ensures the deployment points to the image we just loaded/pushed.
+    - name: Update K8s Manifest with Image Tag
+      run: |
+        # Use the latest tag for deployment in Minikube
+        IMAGE_TAG=${{ env.REGISTRY }}/${{ env.IMAGE_REPO_PATH }}:latest
+        
+        # Use 'sed' to replace the placeholder image name in the deployment file
+        # IMPORTANT: Replace YOUR_GITHUB_USERNAME with your actual username/org
+        # The deployment will now use the fully qualified GHCR image name.
+        sed -i 's|ghcr.io/YOUR_GITHUB_USERNAME/nextjs-minikube-app:latest|'${IMAGE_TAG}'|g' ${{ env.K8S_DEPLOYMENT_FILE }}
+        
+        echo "Manifest updated to use image: ${IMAGE_TAG}"
+        
+    # 8. Apply Kubernetes manifests to Minikube
+    - name: Deploy to Minikube
+      run: kubectl apply -f k8s/
+
+    # 9. Wait for the deployment to roll out and become ready
+    - name: Wait for Deployment Readiness
+      run: kubectl rollout status deployment/nextjs-app-deployment --timeout=5m
+
+    # 10. Test the service using Minikube's service URL
+    - name: Test Service Connectivity
+      run: |
+        echo "--- Kubernetes Status ---"
+        kubectl get all
+        
+        # Get the Minikube URL for the exposed NodePort service
+        SERVICE_URL=$(minikube service nextjs-app-service --url)
+        echo "Service URL: $SERVICE_URL"
+        
+        # Simple health check to ensure the application is responding
+        curl -s -f $SERVICE_URL || (echo "Deployment health check failed!"; exit 1)
+        echo "Deployment successful and service is responding!"
