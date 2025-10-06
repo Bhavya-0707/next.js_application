@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+name: nextjs-app-deployment
+labels:
+app: nextjs-app
+spec:
+replicas: 1
+selector:
+matchLabels:
+app: nextjs-app
+template:
+metadata:
+labels:
+app: nextjs-app
+spec:
+containers:
+- name: nextjs-app
+# PLACEHOLDER: The GitHub Action will replace this image tag.
+# Ensure the path (ghcr.io/YOUR_GITHUB_USERNAME/repo-name) is correct.
+image: ghcr.io/YOUR_GITHUB_USERNAME/nextjs-minikube-app:latest
+imagePullPolicy: Always
+ports:
+- containerPort: 3000
+env:
+# Next.js uses PORT environment variable for its internal server port
+- name: PORT
+value: "3000"
+resources:
+limits:
+memory: "256Mi"
+cpu: "500m"
