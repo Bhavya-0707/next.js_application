@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+name: nextjs-app-service
+labels:
+app: nextjs-app
+spec:
+
+Use NodePort to make the service accessible outside the cluster (Minikube host)
+type: NodePort
+selector:
+app: nextjs-app
+ports:
+# Port 80 is the external port for the service
+- protocol: TCP
+port: 80
+# TargetPort 3000 is the internal port where the Next.js server runs inside the container
+targetPort: 3000
+# NodePort will be automatically assigned by Kubernetes
